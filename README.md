@@ -13,6 +13,9 @@ This project is a snooker game featuring all the essential functions necessary f
 ### Known Issue
 Currently, the game lacks a back button. To return to the menu page, users must refresh the page. This will be addressed in future updates.
 
+### Video Demonstration
+[Watch the Midterm Snooker Game Video](https://youtu.be/H6kkN37u-ag)
+
 ---
 
 ## Final - Face Detection and Filters
@@ -29,4 +32,7 @@ This project involves face detection and applying filters using the ml5 library.
 - Updated to use the new `bodypose` model (replacing `posenet` as of 2024)
 
 ### Note
-To run the second game, you need to update the code to use `bodypose` instead of `posenet`. For more details on ml5 and the changes, refer to the [ml5 documentation](https://docs.ml5js.org/#/welcome/faq?id=faq)
+To run the second game, you need to update the code to use `bodypose` instead of `posenet`. For more details on ml5 and the changes, refer to the [ml5 documentation](https://docs.ml5js.org/#/welcome/faq?id=faq).
+
+### Video Demonstration
+[Watch the Final Face Detection and Filters Video](https://youtu.be/kY0S9ojIfMo)
