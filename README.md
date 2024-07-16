@@ -29,4 +29,4 @@ This project involves face detection and applying filters using the ml5 library.
 - Updated to use the new `bodypose` model (replacing `posenet` as of 2024)
 
 ### Note
-To run the second game, you need to update the code to use `bodypose` instead of `posenet`. For more details on ml5 and the changes, refer to the [ml5 documentation](https://docs.ml5js.org/#/welcome/faq?id=faq
+To run the second game, you need to update the code to use `bodypose` instead of `posenet`. For more details on ml5 and the changes, refer to the [ml5 documentation](https://docs.ml5js.org/#/welcome/faq?id=faq)
