@@ -1,0 +1,1150 @@
+
+ -------------------- ball.js ------------------------ 
+
+// <-------------------------------------------------SNOOKER BALLS----------------------------------------------------------->
+var poolBalls = [];
+var colorballs = [];
+var colorOrder = [];
+var consecutiveBalls = [];
+var cueBall;
+var shotIndicator; 
+var score = 0;
+var appliedForce;
+var cueBallPrevVelocity = { x: 0, y: 0 };
+var cueBallRest = false;
+var cueBallDrawn = false;
+var nextColoredBallIndex = 0;
+
+// <------------------------------------------ FREE BALL --------------------------------------->
+function drawFreeBall()
+{   
+    push();
+    fill(255);
+    if(!cueBallDrawn){
+        var conMouseX = constrain(mouseX, width / 2 - tableWidth/3, width/2-tableWidth/4);
+        var conMouseY = constrain(mouseY, height / 2 - tableHeight/5, height/2 + tableHeight/5);
+        ellipse(conMouseX,conMouseY,ballDiameter);
+    }else{
+        ellipse(mouseX,mouseY,ballDiameter);
+    }
+    pop();
+}
+
+//<--------------------------------------------------CUEBALL ------------------------------------------------------->
+function setupCueBall(x,y)
+{
+    cueBall = Bodies.circle(x, y, ballDiameter/2, {restitution:.8, friction: 0.5, density: 0.01, sleepThreshold: 30});
+    World.add(engine.world, [cueBall])
+}
+
+function drawCueBall()
+{
+    push()
+    fill(255);
+    if(!cueBallDrawn){
+    drawVertices(cueBall.vertices);
+    }
+    if (checkDistance(cueBall)) {
+        resetCueBall();
+    }
+    checkCueballAtRest();
+    pop()
+}
+
+//<-------------------------------------------------REDBALLS/POOLBALLS ---------------------------------------------->
+function makePattern(rows, x, y, r) {
+    let columns = 1;
+    const ballsPattern = [];
+
+    for (let i = 0; i < rows; i++) {
+        const ballsRow = Array(columns).fill().map((_, colIndex) => 
+            createVector(x + (columns - 1) * r * 2, y + (colIndex - columns / 2) * r * 2 + r)
+        );
+
+        ballsPattern.push(...ballsRow);
+        columns++;
+    }
+
+    return ballsPattern;
+}
+
+function setupPoolBalls() {
+    const ballPatternRows = 5;
+    const ballPatternX = width / 4 + tableWidth / 1.38;
+    const ballPatternY = height / 2;
+    const ballPatternRadius = ballDiameter / 2;
+    const poolBallsPattern = makePattern(ballPatternRows, ballPatternX, ballPatternY, ballPatternRadius);
+    poolBalls = poolBallsPattern.map(({ x, y }) => new PoolBall(x, y, { restitution: 0.8, friction: 0.5 },"#FF0000"));
+}
+
+function PoolBall(x, y, options,color) {
+    this.originalX = x;
+    this.originalY = y;
+    this.color = color;
+    this.reset = function() {
+        Body.setVelocity(this.body, { x: 0, y: 0 });
+        Body.setPosition(this.body, { x: this.originalX, y: this.originalY });
+    }
+    this.body = Bodies.circle(x, y, ballDiameter / 2, options);
+    World.add(engine.world, this.body);
+} 
+
+function drawPoolBalls() 
+{   
+    push()
+    for (var i = 0; i < poolBalls.length; i++) {
+        fill(poolBalls[i].color)
+        drawVertices(poolBalls[i].body.vertices);
+
+    }
+
+    for (var ball of poolBalls) {
+        if (checkDistance(ball.body)) {
+            consecutiveBalls.push(ball);
+            removeFromWorld(ball);
+            checkConsecutiveBalls();
+        }
+    }
+    pop();
+}
+
+// <---------------------------------------------COLORBALLS---------------------------------------------------------------->
+function coloredBalls(x,y,size,options,color){
+    this.body = Bodies.circle(x,y,size,options);
+    this.color = color;
+    this.originalX = x;
+    this.originalY = y;
+    World.add(engine.world, this.body);
+}
+
+function setupColoredBalls(){
+    var options = {restitution:.8, friction: 0.5};
+     var greenball = new coloredBalls(width/2-tableWidth/4, height/2-50, ballDiameter/2, options,"#00FF00");
+     var brownball = new coloredBalls(width/2-tableWidth/4, height/2, ballDiameter/2, options,"#8B4513");
+     var yellowball = new coloredBalls(width/2-tableWidth/4, height/2+50, ballDiameter/2, options,"#FFFF00");
+     var blueball = new coloredBalls(width/2, height/2, ballDiameter/2, options,"#0000FF");
+     var pinkball = new coloredBalls(width/2+tableWidth/5, height/2, ballDiameter/2, options,"#FFC0CB");
+     var blackball = new coloredBalls(width/2+tableWidth/2.5, height/2, ballDiameter/2,options, "#000000" );
+    colorballs.push(greenball,brownball,yellowball,blueball,pinkball,blackball);
+
+    colorOrder = colorballs.map(ball => ball.color);
+}
+
+function drawColoredBalls(){
+    for (var ball of colorballs) {
+        fill(ball.color);
+        drawVertices(ball.body.vertices);
+            
+        if (checkDistance(ball.body)) {
+            if(poolBalls.length === 0 && ball.color === colorOrder[nextColoredBallIndex])
+            { 
+                removeFromWorld(ball); 
+                if(coloredBalls.length != 0) nextColoredBallIndex++;
+                addColorBallValue(ball.color);  
+                               
+            }else {
+                resetPocketedBall(ball);
+                consecutiveBalls.push(ball);
+                checkConsecutiveBalls();
+            }  
+        }
+    }  
+}
+
+// <-------------------------------------------RESET BALLS------------------------------------------------------------->
+function resetCueBall() {
+    Body.setVelocity(cueBall, { x: 0, y: 0 });
+    cueBallDrawn = true;
+    drawFreeBall();
+    if(mouseIsPressed) {
+        cueBallDrawn = false;
+    Body.setPosition(cueBall, { x: mouseX, y: mouseY }); 
+    }  
+}
+
+function resetPoolBalls() {
+    for (var ball of poolBalls) {
+        ball.reset();
+    }
+}
+
+function resetColorballs(ball) {
+    for (var ball of colorballs) {
+        Body.setVelocity(ball.body, { x: 0, y: 0 });
+        Body.setPosition(ball.body, { x: ball.originalX, y: ball.originalY });
+    } 
+}
+
+function resetPocketedBall(ball) {
+    Body.setVelocity(ball.body, { x: 0, y: 0 });
+    Body.setPosition(ball.body, { x: ball.originalX, y: ball.originalY });
+}
+
+// <------------------------------------------- CHECK DISTANCE -------------------------------------------------------->
+function checkDistance(ball) {
+    if(gameState){
+    var pos = ball.position;
+    for (var i = 0; i < holes.length; i++) {
+        var hole = holes[i];
+        var distance = Matter.Vector.magnitude({
+            x: pos.x - hole.x,
+            y: pos.y - hole.y
+        });
+
+        if (distance < 19) {
+            return true;
+        }
+    }
+    return false;
+    }else if(ovalgameState) {
+        var pos = ball.position;
+    for (var i = 0; i < ovalHoles.length; i++) {
+        var hole = ovalHoles[i];
+        var distance = Matter.Vector.magnitude({
+            x: pos.x - hole.x,
+            y: pos.y - hole.y
+        });
+
+        if (distance < 19) {
+            return true;
+        }
+    }
+    return false;
+    }
+} 
+
+
+// <-----------------------------------------REMOVE FROM WORLD -------------------------------------------------->
+function removeFromWorld(ball) {
+    World.remove(engine.world, ball.body);   
+        // Remove from poolBalls array
+        var index = poolBalls.indexOf(ball);
+        if (index !== -1) {
+            poolBalls.splice(index, 1);
+            score++; 
+        }
+     
+        // Remove from colorballs array
+        var index2 = colorballs.indexOf(ball);
+        if (index2 !== -1) {
+            colorballs.splice(index2, 1);
+        }
+}
+
+// <----------------------------------------------- RANDOM BALLS ----------------------------------------------->
+function randomisePoolballs() {
+    const minX = width / 2 - tableWidth / 2.5;
+    const minY = height / 2 - tableHeight / 2.5;
+    const maxX = width / 2 + tableWidth / 2.5;
+    const maxY = height / 2 + tableHeight / 2.5;
+
+    for (var ball of poolBalls) {
+        const randomX = random(minX, maxX);
+        const randomY = random(minY, maxY);
+        Body.setPosition(ball.body, { x: randomX, y: randomY });
+    }
+}
+
+function randomiseColoredBalls() {
+    const minX = width / 2 - tableWidth / 2.5;
+    const minY = height / 2 - tableHeight / 2.5;
+    const maxX = width / 2 + tableWidth / 2.5;
+    const maxY = height / 2 + tableHeight / 2.5;
+
+    for (var ball of colorballs) {
+        const randomX = random(minX, maxX);
+        const randomY = random(minY, maxY);
+        Body.setPosition(ball.body, { x: randomX, y: randomY });
+    }
+}
+
+// <------------------------------------------- CUEBALL MECHANICS ---------------------------------------------->
+function checkCueballAtRest() {
+    const velocity = cueBall.velocity;
+    const threshold = 0.1; 
+
+    if (abs(velocity.x) < threshold && abs(velocity.y) < threshold) {
+        stroke("red")
+        textSize(24)
+        text("Click to Play", width/2-45,height-50)
+        cueBallRest = true;
+    } else {
+        cueBallRest = false;
+    }
+    cueBallPrevVelocity = { x: velocity.x, y: velocity.y };
+}
+
+function constrain(value, min, max) {
+    return Math.min(Math.max(value, min), max);
+}
+
+// <------------------------------------------- BALL ORDER ----------------------------------------------------->
+function drawBallOrder(){
+    push();
+    fill(colorOrder[nextColoredBallIndex]);
+    textSize(20);
+    text("Next Ball: ", width / 2 + tableWidth/4, 75);
+    ellipse(width / 2 + tableWidth/2.4, 68, ballDiameter, ballDiameter);
+    pop();
+}
+
+function checkConsecutiveBalls() {
+    for (let i = 0; i < consecutiveBalls.length-1; i++) {
+        const currentBall = consecutiveBalls[i];
+        const nextBall = consecutiveBalls[i + 1];
+        if(poolBalls.length != 0){
+            if (currentBall.color != "#FF0000" && nextBall.color != "#FF0000") {
+                alert("two color balls in a row and minus point");
+                console.log("Consecutive balls with colors:", currentBall.color, "and", nextBall.color);
+                consecutiveBalls.splice(i, 2); 
+                i--; 
+                score -= 1 ;
+            }else if(currentBall.color == "#FF0000" && nextBall.color == "#FF0000")
+            {
+                alert("two red balls in a row and minus point")
+                consecutiveBalls.splice(i,2);
+                i--;
+                score -= 2;
+            }
+        }
+    }
+}
+
+// <------------------------------------- COLOR BALLS SCORE-------------------------------------------------->
+function addColorBallValue(color) {
+    switch (color) {
+        case "#00FF00": // Green ball
+            score += 2;
+            break;
+        case "#8B4513": // Brown ball
+            score += 3;
+            break;
+        case "#FFFF00": // Yellow ball
+            score += 4;
+            break;
+        case "#0000FF": // Blue ball
+            score += 5;
+            break;
+        case "#FFC0CB": // Pink ball
+            score += 6;
+            break;
+        case "#000000": // Black ball
+            score += 7;
+            break;
+    }
+}
+
+function mouseDragged(){}
+
+
+
+
+
+
+
+
+ -------------------- cueman.js ------------------------ 
+
+// <------------------------------------------------------ FUM MODE ------------------------------------------------------->
+var boxes = [];
+var greenBalls = [];
+var checkGreen=[];
+var blackBalls = [];
+var score = 0;
+var lives= 3;
+var isRight = false;
+var isLeft = false;
+var cuemanposx, cuemanposy, cuemanVelocityX;
+var cuemanBody;
+
+// <----------------------------------------- CUEMAN AND HIS WORLD ----------------------------------------------------------->
+function setupCuemanWorld()
+{
+
+    cuemanposx = width / 2;
+    cuemanposy = height - 50;
+    cuemanVelocityX = 5;
+    floor = Bodies.rectangle(width / 2, height - 5, width, 10, { isStatic: true });
+    cuemanBody = Bodies.rectangle(cuemanposx, cuemanposy, 50, 100, {  friction: 0.5, gravity: { scale: 0 }, isStatic: true });
+    World.add(engine.world, [cuemanBody, floor]);
+
+    generateGreenBall();    
+    generateBlackBall();
+
+    setTimeout(function() {
+        setInterval(generateGreenBall, 2000); 
+    }, 5000);
+    
+    setTimeout(function() {
+            setInterval(generateBlackBall, 1000); 
+    }, 5000);
+
+}
+
+function drawCuemanWorld() {
+    background(108,122,137);
+    Engine.update(engine);
+    fill("red");
+    drawVertices(cuemanBody.vertices);
+
+    fill("green")
+    drawVertices(floor.vertices);
+
+    fill("yellow");
+    generateObjects(width / 2, 0);
+    for (var i = 0; i < boxes.length; i++) {
+        drawVertices(boxes[i].vertices);
+    
+        if (isOffScreen(boxes[i]) || isCollision(floor, boxes[i])) {
+            // remove objects that are off-screen or collide with the floor
+            World.remove(engine.world, boxes[i]);
+            boxes.splice(i, 1);
+            i--;
+        } else {
+            if (isCollision(cuemanBody, boxes[i])) {
+                console.log("Collision!");
+            }
+        }
+    }
+
+    display()
+    health();
+
+    CheckCollisions(greenBalls, "green");
+    CheckCollisions(blackBalls, "black");
+}
+
+function moveCueman() {
+    var cuemanWidth = 50;
+    if (isLeft && cuemanBody.position.x - cuemanWidth / 2 > 0) {
+        Body.translate(cuemanBody, { x: -10, y: 0 });
+    } else if (isRight && cuemanBody.position.x + cuemanWidth / 2 < width) {
+        Body.translate(cuemanBody, { x: 10, y: 0 });
+    }
+}
+
+// <-------------------------------------------- GENERATE OBJECTS ----------------------------------------------------------------->
+function generateObjects() {
+    var x = random(width); 
+    var y = 0; 
+    var b = Bodies.rectangle(x, y, random(10, 30), random(10, 30), { restitution: 0.8, friction: 0.5 });
+    boxes.push(b);
+    World.add(engine.world, [b]);
+}
+
+function generateGreenBall() {
+    var x = random(10,width-100);
+    var y = 0;
+    var greenBall = Bodies.circle(x, y, 15, { restitution: 0.8, friction: 0.5, label: "greenBall" });
+    greenBalls.push(greenBall);
+    World.add(engine.world, greenBall);
+}
+
+function generateBlackBall() {
+    var x = random(10,width-100);
+    var y = 0;
+    var blackBall = Bodies.circle(x, y, 15, { restitution: 0.8, friction: 0.5, label: "blackBall" });
+    blackBalls.push(blackBall);
+    World.add(engine.world, blackBall);
+}
+
+// <------------------------------------------- CHECK COLLISIONS ---------------------------------------------------------------->
+function CheckCollisions(balls, color) {
+    for (var i = 0; i < balls.length; i++) {
+        fill(color);
+        drawVertices(balls[i].vertices);
+
+        if (isOffScreen(balls[i]) || isCollision(floor, balls[i])) {
+            if(color =="green") checkGreen.push(balls[i]);
+            World.remove(engine.world, balls[i]);
+            balls.splice(i, 1);
+            i--;
+        } else {
+            // check collision with cueman
+            if (isCollision(cuemanBody, balls[i])) {
+                if (color == "green") {
+                    console.log("Green ball collected! Increase score.");
+                    score++;
+                } else if (color == "black") {
+                    console.log("Black ball collected! Decrease lives.");
+                    lives--;
+                    explosion.play()
+                }
+
+                World.remove(engine.world, balls[i]);
+                balls.splice(i, 1);
+                i--;
+            }
+        }
+    }
+}
+
+function isOffScreen(body) {
+    var pos = body.position;
+    return pos.y > height || pos.x < 0 || pos.x > width;
+}
+
+function isCollision(bodyA, bodyB) {
+    return Matter.Query.collides(bodyA, [bodyB]).length > 0;
+}
+
+function health()
+{
+    if(lives >0) {
+        moveCueman();
+    }
+       
+    if(lives <= 0)
+    {   
+      gameOver();
+    }
+    if(checkGreen.length >= 3)
+    {
+        lives --
+        explosion.play();
+        checkGreen = [];
+    }
+}
+
+function display()
+{
+        textSize(24);
+        fill(255);
+        stroke("yellow");
+        text("Score: " + score, 20, 75);
+        fill(255,0,0);
+        stroke(0);
+        text("Lives: " + lives, width -100, 75);
+        text("use A and D to move", width -225, 95)
+}
+ -------------------- cuestick.js ------------------------ 
+
+// <---------------------------------------------------- CUESTICK --------------------------------------------------->
+var cueStickAnimationFrame = 0;
+var cueStickDrawn = false;
+var cueStickLength = 20;
+
+function drawCueStick() {
+    push();
+    const fixedBodyLength = 200;
+    const fixedHandleLength = 100;
+    const directionVector = Matter.Vector.normalise(Matter.Vector.create(cueBall.position.x - mouseX, cueBall.position.y - mouseY));
+    const cueStickEndX = cueBall.position.x - cueStickLength * directionVector.x;
+    const cueStickEndY = cueBall.position.y - cueStickLength * directionVector.y;
+    const bodyEnd = Matter.Vector.create(cueStickEndX - fixedBodyLength * directionVector.x, cueStickEndY - fixedBodyLength * directionVector.y);
+    const handleEnd = Matter.Vector.create(bodyEnd.x - fixedHandleLength * directionVector.x, bodyEnd.y - fixedHandleLength * directionVector.y);
+
+    strokeWeight(5);
+    stroke(255);
+    line(cueStickEndX, cueStickEndY, bodyEnd.x, bodyEnd.y);
+    stroke('#C87941');
+    line(bodyEnd.x, bodyEnd.y, handleEnd.x, handleEnd.y);
+    pop();
+}
+
+// <------------------------------------------------------------- ANIMATE CUESTICK ---------------------------------------------------->
+function animateCueStick() {
+    cueStickLength = 20; 
+    cueStickAnimationFrame = 0;
+    cueStickDrawn = true;
+    const animationFrames = 60;
+
+    function animate() {
+        cueStickAnimationFrame++;
+        if (cueStickAnimationFrame <= animationFrames) {
+            cueStickLength += 0.5;
+            setTimeout(animate, 30);
+        } else {
+            cueStickDrawn = false;
+        }
+    }
+    animate();
+}
+
+
+ -------------------- gamemechanics.js ------------------------ 
+
+// <-------------------------------------------------- SNOOKER GAME MECHANICS ---------------------------------------->
+var energyBarHeight = 250;
+var maxForceMagnitude = 500; 
+
+// <-----------------------------------------------ENERGY BAR----------------------------------------->
+function drawEnergyBar() {
+    push();
+    var forceMagnitude = Math.sqrt((cueBall.position.x - mouseX) ** 2 + (cueBall.position.y - mouseY) ** 2);
+    var energyPercentage = forceMagnitude / maxForceMagnitude;
+    fill(50);
+    rect(width / 2 + 430, height / 2 - 120 , 20, energyBarHeight); 
+
+    if (mouseIsPressed && mouseDragged) {
+        fill("#FF4500");
+        energyPercentage = constrain(energyPercentage, 0, 1);
+        rect(width / 2 + 430, height / 2 - 120 + (1 - energyPercentage) * energyBarHeight, 20, energyBarHeight * energyPercentage);  
+    }
+    pop();
+}
+
+// <------------------------------------------HEADS UP DISPLAY ------------------------------------------->
+function drawHUD()
+{
+    push()
+    fill(225,0,205,50);
+    rectMode(CENTER)
+    rect(width/2, height/2-tableHeight/1.3, 600,50);
+
+    // Display the score
+    textSize(24);
+    fill(255);
+    text("Score: " + score, width/2-tableWidth/2.2, height/2 - 220);
+    textSize(16)
+    text("press 5 for menu", width/2-50, height/2 - 220)
+    pop()
+}
+
+// <-----------------------------------------------MODES------------------------------------>
+function modeOne()
+{
+    resetPoolBalls();
+    resetColorballs();
+}
+
+function modeTwo() {
+    randomiseColoredBalls();
+    randomisePoolballs();
+}  
+
+function modeThree() {
+    resetColorballs()
+    randomisePoolballs();
+}
+
+
+function drawVertices(vertices) {
+    beginShape();
+    for (var i = 0; i < vertices.length; i++) {
+        vertex(vertices[i].x, vertices[i].y);
+    }
+    endShape(CLOSE);
+}
+
+// <-------------------------------------- DRAW SHOT INDICATOR -------------------------------->
+function drawShotIndicator() {
+    push();
+    strokeWeight(5);
+    const directionVector = createVector(cueBall.position.x-mouseX,cueBall.position.y-mouseY);
+    const secondLineEndX = cueBall.position.x + directionVector.x;
+    const secondLineEndY = cueBall.position.y + directionVector.y;
+    strokeWeight(2);
+    stroke(255);
+    line(cueBall.position.x, cueBall.position.y, secondLineEndX, secondLineEndY);
+    pop();
+}
+
+// <---------------------------------------- COLLISION DETECTION -------------------------------->
+function collisionDetection() {
+    for (var i = 0; i < poolBalls.length; i++) {
+        var collisionWithPoolBall = Matter.Query.collides(cueBall, [poolBalls[i].body]);
+        if (collisionWithPoolBall.length > 0) {
+            console.log("Collided with pool ball at index " + i);
+           
+        }
+    }
+
+    for (var i = 0; i < colorballs.length; i++) {
+        var collisionWithColorBall = Matter.Query.collides(cueBall, [colorballs[i].body]);
+        if (collisionWithColorBall.length > 0) {
+            console.log("Collided with color ball at index " + i);
+            
+        }
+    }
+
+    for ( var i =0; i < cushionWalls.length; i++) {
+        var collisionWithColorBall = Matter.Query.collides(cueBall, [cushionWalls[i]]);
+        if (collisionWithColorBall.length > 0) {
+            console.log("Collided with cushion wall at index " + i);
+            
+        }
+    }
+}
+// <------------------------------------------ GAMEOVER --------------------------------------->
+function gameOver()
+{
+    push();
+    textSize(36)
+    fill("red")
+    stroke("yellow")
+    text("Game Over", width/2-100, height/2);   
+    gameMusic.stop();
+    pop()
+
+}
+
+function stopMusic(sound)
+{
+    sound.stop()
+}
+ -------------------- main.js ------------------------ 
+
+// <------------------------------------------------- MAIN FILE ------------------------------------------------------------->
+var Engine = Matter.Engine;
+var Render = Matter.Render;
+var World = Matter.World;
+var Bodies = Matter.Bodies;
+var Composites = Matter.Composites;
+var Body = Matter.Body;
+var Constraint = Matter.Constraint;
+var Mouse = Matter.Mouse;
+var MouseConstraint = Matter.MouseConstraint;
+var engine;
+var gameState = false;
+var ovalgameState = false;
+var homePage = true;
+var modePage = false;
+var drawRules = false;
+var drawMenu = false;
+var funMode = false;
+var cuemanWorld = false;
+var cueBallSetupMode = true;
+
+// <--------------------------------------------------- PRELOAD ----------------------------------------------------------->
+function preload() {
+    // <---IMAGE----->
+    start = loadImage('assets/start.png');
+    gameMode = loadImage('assets/choosemode.png');
+    menu = loadImage('assets/menu.png');
+    rules = loadImage('assets/rules.png');
+    story = loadImage('assets/story.png');
+    // <---SOUND------>
+    gameMusic = loadSound('assets/game-music.mp3');
+    strike = loadSound('assets/strike.wav');
+    explosion = loadSound('assets/explosion.mp3');
+
+}
+
+// <-------------------------------------------------- SETUP ---------------------------------------------------------------->
+function setup() {
+    canvas = createCanvas(1200, 600);
+    engine = Engine.create()
+    chooseGameMode();
+}
+
+// <------------------------------------------------------ DRAW ------------------------------------------------------------>
+function draw() {
+
+    if (homePage) {
+        background(start);
+    }else if (modePage) {
+        chooseGameMode();
+    }else if(gameState){
+        drawSnookerWorld();
+    }else if(ovalgameState){
+        drawOvalTableMode();
+    }else if(funMode){
+        if(cuemanWorld)
+        {
+            drawCuemanWorld();
+        } 
+    }
+}
+
+// <------------------------------------------------------- CHOOSE GAME MODE ---------------------------------------------->
+function chooseGameMode()
+{
+    background(gameMode);
+    if (mouseIsPressed && modePage) {
+        if (mouseX < 400) {
+            modePage = false;
+            engine.world.gravity.y = 0;
+            gameState = true;
+            setupSnookerWorld(); 
+        } else if (mouseX > 800) {
+            modePage = false;
+            funMode = true;
+            setupCuemanWorld();
+            background(story);
+            gameMusic.play()
+
+        }else if(mouseX > 400 && mouseX < 800)
+        {
+            modePage = false;
+            engine.world.gravity.y = 0;
+            ovalgameState = true;
+            setupOvalTableMode();
+        }
+    }
+}
+
+// <------------------------------------------------------ HELPER FUNCTIONS ---------------------------------------------->
+function keyPressed() {
+    if (keyCode === ENTER && homePage == true) {
+            homePage = false; 
+            modePage = true;  
+        }
+
+    switch (key) {
+        case '1':
+            modeOne();
+            break;
+        case '2':
+            modeTwo();
+            break;
+        case '3':
+            modeThree();
+            break;
+        case '4':
+            drawRules = !drawRules;
+            break;
+        case '5':
+            drawMenu = !drawMenu;
+            break;
+    }  
+    
+    if (key === 'a' || key === 'A') {
+        isLeft = true;
+    } else if (key === 'd' || key === 'D') {
+        isRight = true;
+    }
+}
+    
+function keyReleased() {
+    if (key === 'a' || key === 'A') {
+        isLeft = false;
+    } else if (key === 'd' || key === 'D') {
+        isRight = false;
+    }
+}
+
+function mousePressed() {
+    if(gameState || ovalgameState){
+    var conMouseX = constrain(mouseX, width / 2 - tableWidth / 3, width / 2 - tableWidth / 4);
+    var conMouseY = constrain(mouseY, height / 2 - tableHeight / 5, height / 2 + tableHeight / 5);
+    if (cueBallSetupMode) {
+        setupCueBall(conMouseX, conMouseY);
+    }
+    cueBallSetupMode = false;
+
+    if (!cueStickDrawn) {
+        cueStickDrawn = true;
+        animateCueStick();
+    }
+    cueStickDrawn = false;
+    } 
+
+    if(funMode) cuemanWorld = true;
+}
+
+function mouseReleased() {
+    if (gameState || ovalgameState) {
+        var force = 2500;
+        var forceX = (cueBall.position.x - mouseX) / force;
+        var forceY = (cueBall.position.y - mouseY) / force;
+        if (cueBallRest || (cueBallPrevVelocity.x === 0 && cueBallPrevVelocity.y === 0)) {
+            strike.play();
+            Body.applyForce(cueBall, { x: cueBall.position.x, y: cueBall.position.y }, { x: forceX, y: forceY });
+        }
+    }
+}
+
+
+
+/* <------------------------------------- GRAPHICS PROGRAMMING – Snooker App Commentary --------------------------------------->
+
+
+App Design Overview:
+I aimed to make this game an exciting and simple snooker experience for players. I kept the rules easy to follow, focusing on the key elements that make snooker fun. The main concept involves the cue ball returning as a free ball after being potted, allowing users to strategically position it for their next shots. The scoring system comes into play when the red ball is pocketed.
+Adding a unique twist, I included a consecutive potting check. If players successfully pot two red or colored balls in a row, the game triggers an alert and deducts points. This feature adds an extra challenge and encourages strategic thinking. To test players' skills further, the game prompts them with the color ball order after potting all the reds. Failing to follow this sequence leads to the replacement of color balls, each assigned with different scoring values.
+For user interaction, I opted for the mouse-released function for shot visualization, providing a simple and intuitive way for users to control their shots. A shot indicator was introduced to guide users and display the direction of their ball's movement.
+
+Extensions:
+As an extension, here’s what I’ve implemented:
+Start Page - The game starts with a page where players press enter to begin their snooker adventure. The mode page gives options for snooker, Oval snooker, and fun modes. Users can easily switch between these modes by clicking, making it accessible for players to choose their preferred gameplay style.
+Dynamic Snooker elements - In the snooker mode, I introduced dynamic elements to elevate the gaming experience. The cue stick is not just a static line but is animated to create a more realistic feel. An energy bar was incorporated to provide a visual representation of the force applied to the cue ball, allowing players to gauge and control their shots more effectively.
+Oval Snooker mode - a delightful variation featuring an oval board with four pockets. It shares the same mechanism as the classic snooker game, adding a new dimension to your playing experience.
+A heads-up display (HUD) was implemented to keep players informed and engaged. It includes a score tracker, providing constant feedback on their performance. Instructions, accessible by pressing 5, offer guidance on gameplay, while pressing 4 opens up a detailed rule page for players to better understand the mechanics. Color ball order guides players on the sequence to pot colored balls.
+Fun Arcade Mode - Players control a red rectangle representing the cue man on a mission to rescue green balls while avoiding menacing black adversaries. Lives are at stake, and players lose a life for every collision with a black ball or upon missing three green balls, accompanied by an explosive sound effect for black ball collisions with the cue man.
+Combining these features aims to enhance the user experience, providing an enjoyable and engaging gameplay in my snooker game.
+
+Reference:
+1.	Measurements - https://en.wikipedia.org/wiki/Snooker
+2.	Pictures - https://www.wallpaperflare.com/
+3.	Sounds - https://pixabay.com/sound-effects/search/game/
+4.	V-pattern - https://codepen.io/colaru/pen/xxxqPNV
+
+
+*/
+
+ -------------------- ovalTablemode.js ------------------------ 
+
+// <----------------------------------- OVAL SNOOKER MODE -------------------------------->
+var ovalWalls = [];
+var ovalHoles;
+
+function setupOvalTableMode() {
+    calculateTablesize();
+    setupOvalTable();
+    setupOvalTablePocket();
+    setupCueBall();
+    setupPoolBalls();
+    setupColoredBalls();
+}
+
+function drawOvalTableMode() {
+    background(108, 122, 137);
+    Engine.update(engine);
+
+    drawOvalTable();
+    drawCueBall();
+    drawPoolBalls();
+    drawColoredBalls();
+    drawHUD();
+    drawEnergyBar();
+    collisionDetection();
+
+    if (cueBallSetupMode) drawFreeBall();
+
+    if (mouseIsPressed) {
+        drawCueStick();
+        drawShotIndicator();
+    }
+
+    if (drawRules) image(rules, tableWidth / 2 + 50, 20, 500, 500);
+    if (drawMenu) background(menu);
+
+    if (poolBalls.length == 0 && colorballs.length == 0) {
+        gameOver();
+    }
+}
+
+function createOvalWalls(centerX, centerY, radiusX, radiusY, wallThickness) {
+    var segments = 35;
+
+    for (var i = 0; i < segments; i++) {
+        var angle = (i / segments) * Math.PI * 2;
+        var x = centerX + radiusX * Math.cos(angle);
+        var y = centerY + radiusY * Math.sin(angle);
+
+        var wall = Bodies.rectangle(x, y, wallThickness, 50, {
+            angle: angle,
+            isStatic: true,
+        });
+
+        ovalWalls.push(wall);
+    }
+}
+
+function setupOvalTable() {
+    createOvalWalls(width / 2, height / 2, 350, 175, 5);
+    World.add(engine.world, ovalWalls);
+}
+
+function drawOvalTable() {
+    push();
+    // <-------------------------- OVAL TABLE WALLS --------------------->
+    fill("#3D0000");
+    for (var i = 0; i < ovalWalls.length; i++) {
+        var vertices = ovalWalls[i].vertices;
+        beginShape();
+        for (var j = 0; j < vertices.length; j++) {
+            vertex(vertices[j].x, vertices[j].y);
+        }
+        endShape(CLOSE);
+    }
+
+    // <----------- OVAL TABLE BORDER AND CUSHION --------------------------->
+    fill("#3D0000");
+    ellipse(width / 2, height / 2, 740, 400);
+    fill("#1E5128");
+    ellipse(width / 2, height / 2, 680, 330);
+
+    for (var i = 0; i < ovalHoles.length; i++) {
+        stroke("#FFFF00");
+        pocket(ovalHoles[i].x, ovalHoles[i].y, pocketSize);
+    }
+    // <--------------------- ARC&LINE -------------------------------->
+    stroke(255);
+    noFill();
+    line(width / 2 - tableWidth / 4, height / 2 - tableHeight / 2.2, width / 2 - tableWidth / 4, height / 2 + tableHeight / 2.2);
+    angleMode(DEGREES);
+    arc(width / 2 - tableWidth / 4, height / 2, 120, 120, 90, 270);
+    noStroke();
+    pop();
+}
+
+// <------------------------- OVAL POCKETS ------------------------------->
+function setupOvalTablePocket() {
+    ovalHoles = [
+        { x: width / 2, y: height / 2 + tableHeight / 1.8 },
+        { x: width / 2 + tableWidth / 1.75, y: height / 2 },
+        { x: width / 2 - tableWidth / 1.73 + 5, y: height / 2 },
+        { x: width / 2, y: height / 2 - tableHeight / 1.8 },
+    ];
+}
+
+ -------------------- snookerworld.js ------------------------ 
+
+// <------------------------------------- SNOOKER WORLD --------------------------------->
+function setupSnookerWorld()
+{
+    calculateTablesize();
+    setupTable();
+    setupPocket();
+    setupPoolBalls();
+    setupCueBall();
+    setupColoredBalls();
+}
+
+function drawSnookerWorld()
+{
+    background(108,122,137);
+    Engine.update(engine);
+    drawTable();
+    drawCueBall();
+    drawPoolBalls();
+    drawColoredBalls();
+    drawHUD();
+    drawEnergyBar();
+    collisionDetection();
+
+    if (cueBallSetupMode) drawFreeBall();
+    if(drawRules) image(rules, tableWidth/2+50 , 20, 500,500)
+    if(drawMenu) background(menu);
+
+    if (mouseIsPressed) {
+        drawCueStick();
+        drawShotIndicator();
+    }
+    
+    if(poolBalls.length == 0) drawBallOrder();
+   
+    if(poolBalls.length == 0 && colorballs.length == 0)
+    {   
+       gameOver();
+    }
+}
+
+
+
+ -------------------- table.js ------------------------ 
+
+// <--------------------------------------------------- TABLE ------------------------------------------>
+var tableWidth, tableHeight, ballDiameter, pocketSize;
+var tableWalls = [];
+var cushionWalls = [];
+var holes;
+
+function calculateTablesize()
+{
+    tableWidth = 600;
+    tableHeight = tableWidth/2;
+    ballDiameter = tableWidth/36;
+    pocketSize = 1.5 * ballDiameter;
+}
+
+function tableWall(x,y,w,h,options)
+{
+  this.body = Bodies.rectangle(x,y,w,h,options);
+  World.add(engine.world, this.body);
+}
+
+function setupTable()
+{
+    var options = { isStatic: true };
+    var wall1 = new tableWall(width/2-tableWidth/4, height/2-tableHeight/2, tableWidth/2-25,tableHeight/18,options);
+    var wall2 = new tableWall(width/2-tableWidth/4, height/2+tableHeight/2, tableWidth/2-25, tableHeight/18,options);
+    var wall3 = new tableWall(width/2-tableWidth/2, height/2, tableHeight/18, tableHeight-25,options);
+    var wall4 = new tableWall(width/2+tableWidth/2, height/2, tableHeight/18, tableHeight-25,options);
+    var wall5 = new tableWall(width/2+tableWidth/4, height/2-tableHeight/2, tableWidth/2-25,tableHeight/18,options);
+    var wall6 = new tableWall(width/2+tableWidth/4, height/2+tableHeight/2, tableWidth/2-25, tableHeight/18,options);
+    tableWalls.push(wall1,wall2,wall3,wall4,wall5,wall6);
+   
+    var trapezoidOptions = { isStatic: true};
+    var trapezoid1 = Bodies.trapezoid(width/2-tableWidth/4.1, height/2-tableHeight/2.15, tableWidth/2-67,tableHeight/38,-0.1, trapezoidOptions);
+    var trapezoid2 = Bodies.trapezoid(width/2+tableWidth/4.1, height/2-tableHeight/2.15, tableWidth/2-67,tableHeight/38,-0.1, trapezoidOptions);
+    var trapezoid3 = Bodies.trapezoid(width/2-tableWidth/4.1, height/2+tableHeight/2.15, tableWidth/2-47,tableHeight/38,0.1, trapezoidOptions);
+    var trapezoid4 = Bodies.trapezoid(width/2+tableWidth/4.1, height/2+tableHeight/2.15, tableWidth/2-47,tableHeight/38,0.1, trapezoidOptions);     
+    trapezoid5Vertices=[
+      {x:width/2+tableWidth/2.05, y:height/2-tableHeight/2.35},
+      {x:width/2+tableWidth/2, y:height/2-tableHeight/2.6},
+      {x:width/2+tableWidth/2, y:height/2+tableHeight/2.6},
+      {x:width/2+tableWidth/2.05, y:height/2+tableHeight/2.35}
+    ]
+    trapezoid6Vertices=[
+      {x:width/2-tableWidth/2.05, y:height/2-tableHeight/2.35},
+      {x:width/2-tableWidth/2, y:height/2-tableHeight/2.6},
+      {x:width/2-tableWidth/2, y:height/2+tableHeight/2.6},
+      {x:width/2-tableWidth/2.05, y:height/2+tableHeight/2.35}
+    ]
+    var trapezoid5 = Bodies.fromVertices(width / 2 - tableWidth / 2.09, height / 2, trapezoid5Vertices, trapezoidOptions);     
+    var trapezoid6 = Bodies.fromVertices(width / 2 + tableWidth / 2.09, height / 2, trapezoid6Vertices, trapezoidOptions);
+    cushionWalls.push(trapezoid1, trapezoid2, trapezoid3, trapezoid4, trapezoid5, trapezoid6);
+
+    World.add(engine.world, cushionWalls);
+}
+
+
+function drawTable()
+{
+    push()
+    // <-----------------------------GREEN CUSHION----------------------->
+    fill("#1E5128");
+    rect(width/2-tableWidth/2,height/2-tableHeight/2,tableWidth,tableHeight)
+    
+    // <--------------------------TABLE WALLS---------------------------->
+    fill("#3D0000");  
+    for(var i=0; i< tableWalls.length; i++)
+    {
+      drawVertices(tableWalls[i].body.vertices);
+    }
+
+    //<-------------------------------CUSHION BUMPERS-------------------------------->
+    fill("#142116"); 
+    for (var i = 0; i < cushionWalls.length; i++) {
+      drawVertices(cushionWalls[i].vertices);
+    }
+
+    // <-------------------------------POCKETS BORDER----------------------------->
+    fill("#FFFF00");
+    rectMode(CENTER)
+    rect(width/2+tableWidth/2, height/2+tableHeight/2,30,25);
+    rect(width/2+tableWidth/2, height/2-tableHeight/2,25,25);
+    rect(width/2, height/2+tableHeight/2,25,25);
+    rect(width/2, height/2-tableHeight/2,25,25);
+    rect(width/2-tableWidth/2, height/2+tableHeight/2,25,25);
+    rect(width/2-tableWidth/2, height/2-tableHeight/2,25,25);
+
+    // <----------------------------ARC & LINE-------------------------->
+    stroke(255);
+    noFill();
+    line(width/2 - tableWidth/4, height/2 - tableHeight/2.2, width/2-tableWidth/4, height/2+tableHeight/2.2 )
+    angleMode(DEGREES)
+    arc(width/2 - tableWidth / 4, height/2, 120,120, 90,270);
+    noStroke()
+    pop()
+
+    // <---------------------------------POCKETS------------------------->
+    for (var i = 0; i < holes.length; i++) {
+      pocket(holes[i].x, holes[i].y, pocketSize)
+    }
+}
+
+
+
+function pocket(x,y,pocketSize) 
+{
+  fill(0);
+  ellipse(x,y,pocketSize);
+}
+
+function setupPocket()
+{
+  holes = [
+      {x:width/2 , y:height/2+tableHeight/2-5},
+      {x:width/2 + tableWidth/2 -5 , y:height/2 + tableHeight/2-5},
+      {x:width/2 - tableWidth / 2 + 5, y: height/2 + tableHeight/2 - 5},
+      {x:width/2, y:height/2 - tableHeight/2+5},
+      {x:width/2 - tableWidth/2+5, y:height/2 - tableHeight/2+5},
+      {x:width/2 + tableWidth / 2 -5 , y:height/2 - tableHeight/2+5}
+
+  ];
+}
+
