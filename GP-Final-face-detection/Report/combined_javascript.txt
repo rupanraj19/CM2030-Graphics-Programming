@@ -1,0 +1,1169 @@
+
+ -------------------- blur.js ------------------------ 
+
+//<------------------------------------------------GAUSSIAN BLUR----------------------------------------------------------------->
+
+function gaussianBlur(img, sigma) {
+
+    var imgCopy = img.get();
+    imgCopy.loadPixels();
+    var kernelSize = 9; 
+    var kernel = createGaussianKernel(kernelSize, sigma);
+    // Apply convolution with the Gaussian kernel
+    for (var x = 0; x < imgCopy.width; x++) {
+        for (var y = 0; y < imgCopy.height; y++) {
+            var pixelIndex = (x + y * imgCopy.width) * 4;
+            // Apply convolution to each channel (RGBA)
+            for (var channel = 0; channel < 3; channel++) { // Loop through RGB channels
+                var blurredValue = 0;
+                // Apply kernel to the neighborhood of the pixel
+                for (var i = 0; i < kernelSize; i++) {
+                    for (var j = 0; j < kernelSize; j++) {
+                        var xOffset = j - Math.floor(kernelSize / 2);
+                        var yOffset = i - Math.floor(kernelSize / 2);
+                        var neighborX = x + xOffset;
+                        var neighborY = y + yOffset;
+                        // Clamp to image boundaries
+                        neighborX = constrain(neighborX, 0, imgCopy.width - 1);  
+                        neighborY = constrain(neighborY, 0, imgCopy.height - 1);
+                        var neighborIndex = (neighborX + neighborY * imgCopy.width) * 4; // Calculate the index of the neighbor pixel
+                        var neighborValue = imgCopy.pixels[neighborIndex + channel];  // Get the value of the neighbor pixel in the specified channel
+                        var kernelValue = kernel[i][j]; // Apply the kernel value to the neighbor pixel
+                        blurredValue += kernelValue * neighborValue;
+                    }
+                }
+                // Update the pixel value with the blurred value
+                imgCopy.pixels[pixelIndex + channel] = blurredValue;
+            }
+        }
+    }
+
+    imgCopy.updatePixels(); // Update pixels of the copied image
+    return imgCopy; // Return the blurred image
+}
+
+function createGaussianKernel(size, sigma) {
+    var kernel = [];
+    var sum = 0;
+
+    // Generate the kernel values using the Gaussian function
+    for (var i = 0; i < size; i++) {
+        kernel[i] = [];
+        for (var j = 0; j < size; j++) {
+            var x = i - Math.floor(size / 2);
+            var y = j - Math.floor(size / 2);
+            kernel[i][j] = Math.exp(-(x * x + y * y) / (2 * sigma * sigma)) / (2 * Math.PI * sigma * sigma);
+            sum += kernel[i][j];
+        }
+    }
+    for (var i = 0; i < size; i++) {  // Normalize the kernel values
+        for (var j = 0; j < size; j++) {
+            kernel[i][j] /= sum;
+        }
+    }
+
+    return kernel;
+}
+
+function convolution(x, y, matrix, img) {
+    var matrixSize = matrix.length;
+    var totalRed = 0.0;
+    var totalGreen = 0.0;
+    var totalBlue = 0.0;
+    var offset = floor(matrixSize / 2);
+    
+    // convolution matrix loop
+    for (var i = 0; i < matrixSize; i++) {
+        for (var j = 0; j < matrixSize; j++) {
+            // Get pixel loc within convolution matrix
+            var xloc = x + i - offset;
+            var yloc = y + j - offset;
+            var index = (xloc + img.width * yloc) * 4;
+            // ensure we don't address a pixel that doesn't exist
+            index = constrain(index, 0, img.pixels.length - 1);
+
+            // multiply all values with the mask and sum up
+            totalRed += img.pixels[index + 0] * matrix[i][j];
+            totalGreen += img.pixels[index + 1] * matrix[i][j];
+            totalBlue += img.pixels[index + 2] * matrix[i][j];
+        }
+    }
+    // return the new color as an array
+    return [totalRed, totalGreen, totalBlue];
+}
+
+
+ -------------------- facedetection.js ------------------------ 
+
+// <---------------------------------------FACE DETECTION--------------------------------------------->
+
+var detector;
+var classifier = objectdetect.frontalface;
+var faces;
+var face, faceImg;
+var scaleFactor;
+
+function faceDetection(capture){    
+    faceImg = capture.get(); // Get the current frame from the video capture
+    faces = detector.detect(faceImg.canvas); // Detect faces in the captured frame
+
+    // Loop through each detected face
+    for (var i = 0; i < faces.length; i++){ 
+        face = faces[i];
+        // Check if the detected face meets a certain threshold
+        if (face[4] > 4){
+            var faceArea = createImage(int(face[2]), int(face[3])); // Create an image of the detected face area
+            let getFace = faceImg.get(face[0], face[1], face[2], face[3]);
+            faceArea.set(0, 0, getFace);
+        }
+    }
+    return faceArea; // Return the image of the detected face area
+}
+
+
+ -------------------- funmode.js ------------------------ 
+
+// <----------------------------- FUNMODE --------------------------------------->
+
+let faceapi;
+let detections = [];
+let skeleton = [];
+let faceOptions;
+let poseNet;
+let pose;
+let enemyPower;
+let PlayerPower;
+let playing = false;
+let balls = []; 
+let ballSpeed = 5;
+let gameStarted = false; 
+let back = true;
+let rectWidth = 100;
+let rectHeight = 400;
+let rectX = 1200/1.2; 
+let rectY = 1200/1.8 - rectHeight / 2;
+
+function toggleVid() {
+    if (playing) {
+        cat.stop();
+    } else {
+        cat.loop();
+        playButton.html('stop');
+    }
+    playing = !playing;
+}
+
+function gotPoses(poses) {
+    if (poses.length > 0) {
+        pose = poses[0].pose;
+        skeleton = poses[0].skeleton;
+    }
+}
+
+function modelReady() {
+    console.log('poseNet ready!');
+    faceapi = ml5.faceApi(video, faceOptions, faceReady);
+}
+
+function faceReady() {
+    faceapi.detect(gotFaces); // Start detecting faces
+}
+
+// <----------------------------------- DRAW FUN WORLD --------------------------------->
+function drawFunWorld() {
+    if(gameStarted){
+        background(gamebg)
+        drawEnergyBar()
+        image(warrior, rectX-450, rectY, 711, 351 )
+        if (pose) {
+        let rightWrist = pose.rightWrist;
+        
+        if (rightWrist) {
+            let wristX = rightWrist.x;
+            let wristY = rightWrist.y;
+            if (wristX > rectX && wristX < rectX + rectWidth && wristY > rectY && wristY < rectY + rectHeight) {
+                // Collision detected, reduce power
+                console.log("Collision detected")
+                enemyPower -= 10;
+                if (enemyPower <= 0) {
+                    gameStarted = false;
+                }
+            }
+        }
+    }
+
+    if (frameCount % 120 === 0) { // Adjust the frame count as needed
+        let randX = random(rectX, rectX + rectWidth);
+        let randY = rectY + (rectHeight * 0.05); // 5% from the top of the rect
+        let newBall = { x: randX, y: randY };
+        balls.push(newBall);
+    }
+
+    // Draw and move balls
+    for (let i = balls.length - 1; i >= 0; i--) {
+        let ball = balls[i];
+        fill(255);
+        if(enemyPower > 0 ){
+        ellipse(ball.x, ball.y, 20, 20);
+        }
+        ball.x -= ballSpeed;
+
+        // Check for collision with body
+        if (pose) {
+            let playerKeypoints = pose.keypoints;
+            for (let j = 0; j < playerKeypoints.length; j++) {
+                let keypoint = playerKeypoints[j];
+                if (dist(ball.x, ball.y, keypoint.position.x, keypoint.position.y) < 20) {
+                    // Collision detected, reduce player's power
+                    console.log("ball collided with player")
+                    PlayerPower -= 10;
+                    if (PlayerPower <= 0) {
+                        gameStarted = false; 
+                    }
+                    balls.splice(i, 1); // Remove the ball
+                    break; // Exit loop since collision detected
+                }
+            }
+        }
+        // Remove balls that are off-screen
+        if (ball.x < 0) {
+            balls.splice(i, 1);
+        }
+    }
+    }else{
+        background(gamebg);
+        gameOver();
+
+    }
+    if(back)
+    {
+        background(0)
+        gameStarted = false;
+    }
+
+    if(gameStarted==false){
+        image(cat, 0, 100, width,800);
+    }
+    image(video, 0, 0, 160, 120);
+    drawBoxes(detections);
+    drawLandmarks(detections);
+    if (pose) {
+        if(gameStarted) {
+            fill(255,0,0);
+            ellipse(pose.leftEye.x, pose.leftEye.y, 20, 20); //lefteye
+            ellipse(pose.rightEye.x,pose.rightEye.y, 20, 20); //righteye
+            let triangleSize = 50; // Size of the triangle
+            let halfSize = triangleSize / 2; // Half of the size for positioning
+          
+            triangle(
+              pose.nose.x - halfSize, pose.nose.y + halfSize, // Bottom left point
+              pose.nose.x + halfSize, pose.nose.y + halfSize, // Bottom right point
+              pose.nose.x, pose.nose.y - halfSize // Top point (nose)
+            );
+            noFill()
+        }
+        for (let i = 0; i < skeleton.length; i++) {
+            let a = skeleton[i][0];
+            let b = skeleton[i][1];
+            stroke("pink");
+            strokeWeight(5);
+            line(a.position.x, a.position.y, b.position.x, b.position.y);
+            noStroke()
+        }
+    }
+
+    // Draw hat on top of the detected face
+    if (detections.length > 0) {
+        let face = detections[0].alignedRect._box;
+        let hatWidth = face._width * 1.2;
+        let hatHeight = face._height * 1.2;
+        let hatX = face._x + face._width / 20;
+        let hatY = face._y - hatHeight / 1.2;
+        image(hatImg, hatX - 30, hatY, hatWidth, hatHeight);
+    }
+}
+// <---------------------------------- GOT FACES ------------------------>
+function gotFaces(error, result) {
+    if (error) {
+        console.log(error);
+        return;
+    }
+
+    detections = result; // Now all the data in this detections
+    console.log(gotFaces);
+    faceapi.detect(gotFaces); // Call the function again here
+}
+
+// <---------------------------- DRAW BOX AND LANDMARKS ----------------------------->
+function drawBoxes(detections) {
+    if (detections.length > 0) {
+        // If at least 1 face is detected
+        for (f = 0; f < detections.length; f++) {
+            let { _x, _y, _width, _height } = detections[f].alignedRect._box;
+            stroke(44, 169, 225);
+            strokeWeight(1);
+            noFill();
+            rect(_x, _y, _width, _height);
+        }
+    }
+}
+
+function drawLandmarks(detections) {
+    if (detections.length > 0) {
+        // If at least 1 face is detected
+        for (f = 0; f < detections.length; f++) {
+            let points = detections[f].landmarks.positions;
+            for (let i = 0; i < points.length; i++) {
+                stroke("green");
+                strokeWeight(10);
+                point(points[i]._x, points[i]._y);
+                noStroke();
+            }
+        }
+    }
+}
+
+// <---------------------------- DRAW ENERGY BAR ----------------------------->
+function drawEnergyBar()
+{
+    push()
+    let energyBarWidth = map(enemyPower, 0, 500, 0, rectWidth);
+    let energyBarColor = color(0, 255, 0);
+    if (enemyPower < 200) {
+        energyBarColor = color(255, 255, 0); // Yellow if power is low
+    }
+    if (enemyPower < 100) {
+        energyBarColor = color(255, 0, 0); // Red if power is critically low
+    }
+    fill(energyBarColor);
+    rect(rectX, 100, energyBarWidth, 10);
+
+    let playerEnergyBarWidth = map(PlayerPower, 0, 500, 0, rectWidth);
+    let playerEnergyBarColor = color(0, 255, 0); // Green by default
+    if (PlayerPower < 200) {
+        playerEnergyBarColor = color(255, 255, 0); // Yellow if power is low
+    }
+    if (PlayerPower < 100) {
+        playerEnergyBarColor = color(255, 0, 0); // Red if power is critically low
+    }
+    fill(playerEnergyBarColor);
+    rect(10, 120, playerEnergyBarWidth*3, 10);
+    pop()
+}
+
+// <------------------------- GAME STATE ------------------------>
+function toggleGameState()
+{  
+    gameStarted = true;
+    enemyPower = 500;
+    PlayerPower = 100;
+    back = false;
+}
+
+function goBack()
+{
+    back = true;
+}
+ -------------------- game.js ------------------------ 
+
+// <---------------------------------------------- HEN GAME ---------------------------------------->
+
+var characterX;
+var eggRadius = 20;
+var eggs = [];
+var score = 0;
+var lives = 3;
+var faceImgForGame;
+
+// <------------------------------------------------- DRAW GAME WORLD ------------------------------------>
+function drawGameWorld() {
+    background(bg);
+    if(lives != 0){
+        push();
+        translate(width, 0);
+        scale(-1, 1); // Flip horizontally
+        image(capture, 0, 0, 160, 120);
+    
+        faceImgForGame.copy(capture, 0, 0, capture.width, capture.height, 0, 0, capture.width, capture.height);
+        faces = detector.detect(faceImgForGame.canvas);
+    
+        strokeWeight(2);
+        stroke(255);
+        noFill();
+    
+        for (var i = 0; i < faces.length; i++) {
+            var face = faces[i];
+            if (face[4] > 4) {
+                rect(face[0], face[1], face[2], face[3]);
+    
+                // Call the drawLandmarks function to draw facial landmarks
+                characterX = map(face[0] + face[2] / 2, 0, 160, 0, width);
+            }
+        }
+    
+        drawCharacter(); // Draw character (hen) at the bottom of the canvas
+        generateEggs();
+        drawEggs();
+        pop();
+     
+        checkCollisions(); // Check for collisions between character and eggs
+        displayScore();// Display score
+        drawLives();
+    }
+    else
+    {
+        gameOver();
+    }
+    
+ 
+}
+
+// <---------------------------------- CHARACTER  AND EGGS ------------------------------------------->
+function drawCharacter() {
+    image(hen,characterX-60, height - 100, 120, 120 )
+}
+
+function generateEggs() {
+    if (frameCount % 60 === 0) { // Generate eggs every second
+        var eggX = random(eggRadius, width - eggRadius); // Random X position within canvas width
+        var eggY = -eggRadius; // Start eggs from top of canvas
+        var eggSpeed = random(3, 5); // Random falling speed for eggs
+        var egg = { x: eggX, y: eggY, radius: eggRadius, speed: eggSpeed };
+        eggs.push(egg);
+    }
+}
+
+function drawEggs() {
+    for (var i = 0; i < eggs.length; i++) {
+        var egg = eggs[i];
+        image(eggImg, egg.x-30, egg.y-25, egg.radius * 3, egg.radius * 3) // Draw egg
+        egg.y += egg.speed; // Update egg's position
+    }
+}
+
+// <------------------------------------- COLLISION DETECTION ------------------------------------>
+function checkCollisions() {
+    for (var i = eggs.length - 1; i >= 0; i--) {
+        var egg = eggs[i];
+        if (dist(characterX, height - 30, egg.x, egg.y) < eggRadius + 25) { // Collision detection with character
+            eggs.splice(i, 1); // Remove collided egg
+            score++; 
+            catchMusic.play();
+        }
+        if (egg.y > height + egg.radius) { // Remove eggs that go beyond the canvas
+            eggs.splice(i, 1);
+            lives--
+        }
+    }
+}
+
+// <--------------------------------------------- GAME DISPLAY ---------------------------------->
+function displayScore() {
+    push()
+    fill("green");
+    textSize(20);
+    textAlign(CENTER);
+    text("Use face to move \nthe character right or left", 150, 50)
+    text("Score: " + score, width - 100, 200);
+    pop()
+}
+
+function gameOver()
+{
+        push()
+        textSize(32)
+        fill("red")
+        text("Game Over ", width/2- 50,height/2);
+        pop()
+
+}
+
+function drawLives() {
+    var x = width - 100;
+    var y = 150;
+    var spacing = 20;
+    fill("red");
+    noStroke();
+    textSize(20);
+    for (var i = 0; i < lives; i++) {
+        text("Lives: ", x - 60 , y, 10)
+        image(hen, x + i * spacing, y, 20, 20);
+    }
+}
+ -------------------- greyscale.js ------------------------ 
+
+// <-------------------------------------GREYSCALE-------------------------------------------->
+
+function greyscale(img) {
+
+    var imgCopy = img.get();
+    imgCopy.loadPixels();
+    var brightnessFactor = 1.2;
+
+    for (var y = 0; y < imgCopy.height; y++) {
+        for (var x = 0; x < imgCopy.width; x++) {
+            
+            var pixelIndex = ((imgCopy.width * y) + x) * 4;
+            
+            // Extract RGB and alpha values of the current pixel
+            var pixelRed = imgCopy.pixels[pixelIndex + 0];
+            var pixelGreen = imgCopy.pixels[pixelIndex + 1];
+            var pixelBlue = imgCopy.pixels[pixelIndex + 2];
+            var pixelAlpha = imgCopy.pixels[pixelIndex + 3];
+        
+            var grey = (pixelRed + pixelGreen + pixelBlue) / 3;  // Convert RGB to greyscale
+            grey = min(255, grey * brightnessFactor);  // Apply brightness factor
+            
+            // Update RGB values of the pixel to the greyscale value
+            imgCopy.pixels[pixelIndex + 0] = grey;
+            imgCopy.pixels[pixelIndex + 1] = grey;
+            imgCopy.pixels[pixelIndex + 2] = grey;
+        }
+    }
+    
+    imgCopy.updatePixels(); // Update the pixels of the copied image
+    return imgCopy; // Return the greyscaled image
+}
+
+ -------------------- hsvandcmyk.js ------------------------ 
+
+// <------------------------------------------- HSV AND CMYK ------------------------------------------>
+
+function hsvConversion(img, threshold) {
+    var imgCopy = img.get();
+    imgCopy.loadPixels();
+
+    var hsvImgWithThreshold = createImage(imgCopy.width, imgCopy.height);
+    var hsvImgWithoutThreshold = createImage(imgCopy.width, imgCopy.height);
+
+    hsvImgWithThreshold.loadPixels();
+    hsvImgWithoutThreshold.loadPixels();
+
+    for (var y = 0; y < imgCopy.height; y++) {
+        for (var x = 0; x < imgCopy.width; x++) {
+            var pixelIndex = ((imgCopy.width * y) + x) * 4;
+            var pixelRed = imgCopy.pixels[pixelIndex + 0];
+            var pixelGreen = imgCopy.pixels[pixelIndex + 1];
+            var pixelBlue = imgCopy.pixels[pixelIndex + 2];
+            var pixelAlpha = imgCopy.pixels[pixelIndex + 3];
+
+            var hsv = rgbToHsv(pixelRed, pixelGreen, pixelBlue);
+            var avgBrightness = (pixelRed + pixelGreen + pixelBlue) / 3;
+
+            // Apply thresholding
+            if (avgBrightness< threshold) {
+                // Display hue as red, saturation as green, value as blue
+                hsvImgWithThreshold.pixels[pixelIndex + 0] = hsv[0] * 1.5;
+                hsvImgWithThreshold.pixels[pixelIndex + 1] = hsv[1] * 1.5;
+                hsvImgWithThreshold.pixels[pixelIndex + 2] = hsv[2] * 1.5;
+                hsvImgWithThreshold.pixels[pixelIndex + 3] = pixelAlpha;
+            } else {
+                // Below threshold, set pixel to black
+                hsvImgWithThreshold.pixels[pixelIndex + 0] = pixelRed;
+                hsvImgWithThreshold.pixels[pixelIndex + 1] = pixelGreen;
+                hsvImgWithThreshold.pixels[pixelIndex + 2] = pixelBlue;
+                hsvImgWithThreshold.pixels[pixelIndex + 3] = pixelAlpha;
+            }
+
+            // Without thresholding
+            hsvImgWithoutThreshold.pixels[pixelIndex + 0] = hsv[0] * 1.5;
+            hsvImgWithoutThreshold.pixels[pixelIndex + 1] = hsv[1] * 1.5;
+            hsvImgWithoutThreshold.pixels[pixelIndex + 2] = hsv[2] * 2;
+            hsvImgWithoutThreshold.pixels[pixelIndex + 3] = pixelAlpha;
+        }
+    }
+    hsvImgWithThreshold.updatePixels();
+    hsvImgWithoutThreshold.updatePixels();
+
+    return [hsvImgWithThreshold, hsvImgWithoutThreshold];
+}
+
+function rgbToHsv(r, g, b) {
+    // Normalize RGB values
+    r = r / 255;
+    g = g / 255;
+    b = b / 255;
+
+    var max = Math.max(r, g, b);
+    var min = Math.min(r, g, b);
+    var delta = max - min;
+    var h, s, v;
+
+    // Hue calculation
+    if (delta === 0) {
+        h = 0;
+    } else if (max === r) {
+        h = ((g - b) / delta) % 6;
+    } else if (max === g) {
+        h = (b - r) / delta + 2;
+    } else {
+        h = (r - g) / delta + 4;
+    }
+    h = Math.round(h * 60);
+    if (h < 0) h += 360;
+
+    // Saturation calculation
+    if (max === 0) {
+        s = 0;
+    } else {
+        s = delta / max;
+    }
+    s = Math.round(s * 100);
+
+    // Value calculation
+    v = Math.round(max * 100);
+
+    return [h, s, v];
+}
+
+
+function cmykConversion(img, threshold) {
+    var imgCopy = img.get();
+    imgCopy.loadPixels();
+
+    var cmykImgWithThreshold = createImage(imgCopy.width, imgCopy.height);
+    var cmykImgWithoutThreshold = createImage(imgCopy.width, imgCopy.height);
+
+    cmykImgWithThreshold.loadPixels();
+    cmykImgWithoutThreshold.loadPixels();
+
+    for (var y = 0; y < imgCopy.height; y++) {
+        for (var x = 0; x < imgCopy.width; x++) {
+            var pixelIndex = ((imgCopy.width * y) + x) * 4;
+            var pixelRed = imgCopy.pixels[pixelIndex + 0];
+            var pixelGreen = imgCopy.pixels[pixelIndex + 1];
+            var pixelBlue = imgCopy.pixels[pixelIndex + 2];
+            var pixelAlpha = imgCopy.pixels[pixelIndex + 3];
+
+            var cmyk = rgbToCmyk(pixelRed, pixelGreen, pixelBlue);
+            var avgBrightness = (pixelRed + pixelGreen + pixelBlue) / 3;
+
+            // Apply thresholding
+            if (avgBrightness < threshold) {
+                // Display cyan as red, magenta as green, yellow as blue, and black as white
+                cmykImgWithThreshold.pixels[pixelIndex + 0] = cmyk[0] * 255; // Cyan
+                cmykImgWithThreshold.pixels[pixelIndex + 1] = cmyk[1] * 255; // Magenta
+                cmykImgWithThreshold.pixels[pixelIndex + 2] = cmyk[2] * 255; // Yellow
+                cmykImgWithThreshold.pixels[pixelIndex + 3] = 255; // Black
+            } else {
+                // Below threshold, set pixel to black
+                cmykImgWithThreshold.pixels[pixelIndex + 0] = pixelRed;
+                cmykImgWithThreshold.pixels[pixelIndex + 1] = pixelGreen;
+                cmykImgWithThreshold.pixels[pixelIndex + 2] = pixelBlue;
+                cmykImgWithThreshold.pixels[pixelIndex + 3] = pixelAlpha;
+            }
+
+            // Without thresholding
+            cmykImgWithoutThreshold.pixels[pixelIndex + 0] = cmyk[0] * 255;
+            cmykImgWithoutThreshold.pixels[pixelIndex + 1] = cmyk[1] * 255;
+            cmykImgWithoutThreshold.pixels[pixelIndex + 2] = cmyk[2] * 255;
+            cmykImgWithoutThreshold.pixels[pixelIndex + 3] = cmyk[3] * 255;
+        }
+    }
+    cmykImgWithThreshold.updatePixels();
+    cmykImgWithoutThreshold.updatePixels();
+
+    return [cmykImgWithThreshold, cmykImgWithoutThreshold];
+}
+
+function rgbToCmyk(r, g, b) {
+    let c = 1 - r / 255;
+    let m = 1 - g / 255;
+    let y = 1 - b / 255;
+  
+    let k = Math.min(c, m, y);
+    if (k === 1) {
+      c = m = y = 0;
+    } else {
+      c = (c - k) / (1 - k);
+      m = (m - k) / (1 - k);
+      y = (y - k) / (1 - k);
+    }
+  
+    return [c, m, y, k]; //cyan , magenta, yellow, key(black)
+  }
+
+
+ -------------------- pixelated.js ------------------------ 
+
+//<-------------------------------------------------- PIXELATED -----------------------------------------------------> 
+
+function pixelated(img){
+
+var pixelatedSize = 10;
+//load image pixel values into array pixels
+var imgCopy = img.get();
+imgCopy.loadPixels();
+
+//process block by block
+for(var y=0;y<img.height;y+=pixelatedSize){
+    for(var x=0;x<img.width;x+=pixelatedSize){
+
+        var sumRed = 0;
+        var sumGreen = 0;
+        var sumBlue = 0;
+        
+        //get the sum of RGB of that block
+        for(var i=0;i<pixelatedSize;i++){
+            for(var j=0;j<pixelatedSize;j++){
+                var pixelIndex = ((img.width * (y+j)) + (x+i))*4;
+                var pixelRed = imgCopy.pixels[pixelIndex + 0];
+                var pixelGreen = imgCopy.pixels[pixelIndex + 1];
+                var pixelBlue = imgCopy.pixels[pixelIndex + 2];
+                sumRed+=pixelRed;
+                sumGreen+=pixelGreen;
+                sumBlue+=pixelBlue;
+            }
+        }
+        //calcualte the ave of RGB of that block
+        var aveRed = sumRed/(pixelatedSize*pixelatedSize);
+        var aveGreen = sumGreen/(pixelatedSize*pixelatedSize);
+        var aveBlue = sumBlue/(pixelatedSize*pixelatedSize);
+        
+            //paint the block with the ave RGB value
+            for(var i=0;i<pixelatedSize;i++){
+                for(var j=0;j<pixelatedSize;j++){
+                    var pixelIndex = ((imgCopy.width * (y+j)) + (x+i))*4;
+                    imgCopy.pixels[pixelIndex + 0] = aveRed;
+                    imgCopy.pixels[pixelIndex + 1] = aveGreen;
+                    imgCopy.pixels[pixelIndex + 2] = aveBlue;
+                            }
+                        }
+                    }
+                }
+    imgCopy.updatePixels();
+    return imgCopy;
+}
+
+ -------------------- rgbchannels.js ------------------------ 
+
+// <----------------------------------------------------RGB CHANNELS -------------------------------------------->
+
+function rgbChannels(img) {
+    // Create copies of the input image
+    var imgCopy = img.get();
+    imgCopy.loadPixels();
+
+    // Create images for each RGB channel
+    var redImg = createImage(imgCopy.width, imgCopy.height);
+    redImg.loadPixels();
+    var greenImg = createImage(imgCopy.width, imgCopy.height);
+    greenImg.loadPixels();
+    var blueImg = createImage(imgCopy.width, imgCopy.height);
+    blueImg.loadPixels();
+
+    // Process each pixel of the input image
+    for (var y = 0; y < imgCopy.height; y++) {
+        for (var x = 0; x < imgCopy.width; x++) {
+            var pixelIndex = ((imgCopy.width * y) + x) * 4;
+            var pixelRed = imgCopy.pixels[pixelIndex + 0];
+            var pixelGreen = imgCopy.pixels[pixelIndex + 1];
+            var pixelBlue = imgCopy.pixels[pixelIndex + 2];
+
+            // Constrain pixel values to range [0, 255]
+            pixelRed = constrain(pixelRed, 0, 255);
+            pixelGreen = constrain(pixelGreen, 0, 255);
+            pixelBlue = constrain(pixelBlue, 0, 255);
+            // Red channel
+            redImg.pixels[pixelIndex + 0] = pixelRed;
+            redImg.pixels[pixelIndex + 1] = 0;
+            redImg.pixels[pixelIndex + 2] = 0;
+            redImg.pixels[pixelIndex + 3] = 255;
+            // Green channel
+            greenImg.pixels[pixelIndex + 0] = 0;
+            greenImg.pixels[pixelIndex + 1] = pixelGreen;
+            greenImg.pixels[pixelIndex + 2] = 0;
+            greenImg.pixels[pixelIndex + 3] = 255;
+            // Blue channel
+            blueImg.pixels[pixelIndex + 0] = 0;
+            blueImg.pixels[pixelIndex + 1] = 0;
+            blueImg.pixels[pixelIndex + 2] = pixelBlue;
+            blueImg.pixels[pixelIndex + 3] = 255;
+        }
+    }
+
+    // Update pixel data for each channel image
+    redImg.updatePixels();
+    greenImg.updatePixels();
+    blueImg.updatePixels();
+    return [redImg, greenImg, blueImg];
+}
+
+function rgbWithThreshold(img) {
+    // Create copies of the input image
+    var imgCopy = img.get();
+    imgCopy.loadPixels();
+
+    // Create images for each RGB channel
+    var redImg = createImage(imgCopy.width, imgCopy.height);
+    redImg.loadPixels();
+    var greenImg = createImage(imgCopy.width, imgCopy.height);
+    greenImg.loadPixels();
+    var blueImg = createImage(imgCopy.width, imgCopy.height);
+    blueImg.loadPixels();
+
+    // Process each pixel of the input image
+    for (var y = 0; y < imgCopy.height; y++) {
+        for (var x = 0; x < imgCopy.width; x++) {
+            var pixelIndex = ((imgCopy.width * y) + x) * 4;
+            var pixelRed = imgCopy.pixels[pixelIndex + 0];
+            var pixelGreen = imgCopy.pixels[pixelIndex + 1];
+            var pixelBlue = imgCopy.pixels[pixelIndex + 2];
+
+            // Constrain pixel values to range [0, 255]
+            pixelRed = constrain(pixelRed, 0, 255);
+            pixelGreen = constrain(pixelGreen, 0, 255);
+            pixelBlue = constrain(pixelBlue, 0, 255);
+
+            // Red channel
+            if (redSlider.value() < pixelRed) {
+                redImg.pixels[pixelIndex + 0] = pixelRed;
+                redImg.pixels[pixelIndex + 1] = pixelGreen;
+                redImg.pixels[pixelIndex + 2] = pixelBlue;
+                redImg.pixels[pixelIndex + 3] = 255;
+            } else {
+                redImg.pixels[pixelIndex + 0] = pixelRed;
+                redImg.pixels[pixelIndex + 1] = 0;
+                redImg.pixels[pixelIndex + 2] = 0;
+                redImg.pixels[pixelIndex + 3] = 255;
+            }
+
+            // Green channel
+            if (greenSlider.value() < pixelGreen) {
+                greenImg.pixels[pixelIndex + 0] = pixelRed;
+                greenImg.pixels[pixelIndex + 1] = pixelGreen;
+                greenImg.pixels[pixelIndex + 2] = pixelBlue;
+                greenImg.pixels[pixelIndex + 3] = 255;
+            } else {
+                greenImg.pixels[pixelIndex + 0] = 0;
+                greenImg.pixels[pixelIndex + 1] = pixelGreen;
+                greenImg.pixels[pixelIndex + 2] = 0;
+                greenImg.pixels[pixelIndex + 3] = 255;
+            }
+
+            // Blue channel
+            if (blueSlider.value() < pixelBlue) {
+                blueImg.pixels[pixelIndex + 0] = pixelRed;
+                blueImg.pixels[pixelIndex + 1] = pixelGreen;
+                blueImg.pixels[pixelIndex + 2] = pixelBlue;
+                blueImg.pixels[pixelIndex + 3] = 255;
+            } else {
+                blueImg.pixels[pixelIndex + 0] = 0;
+                blueImg.pixels[pixelIndex + 1] = 0;
+                blueImg.pixels[pixelIndex + 2] = pixelBlue;
+                blueImg.pixels[pixelIndex + 3] = 255;
+            }
+        }
+    }
+
+    // Update pixel data for each channel image
+    redImg.updatePixels();
+    greenImg.updatePixels();
+    blueImg.updatePixels();
+
+    return [redImg, greenImg, blueImg];
+}
+
+ -------------------- sketch.js ------------------------ 
+
+// <---------------------------------------------- MAIN SKETCH ------------------------------------>
+
+var capture, capturedImage;
+var img;
+var redSlider, greenSlider,blueSlider;
+var screenshotButton, gameButton, funModeButton, playButton, backButton;
+var hsvSlider, cmykSlider;
+var w = 160,
+    h = 120;
+var effects;
+var hatImg; 
+var cat,  gamebg, warrior;
+var catchMusic, bgMusic;
+var mode = "default";
+
+// <-------------------------------------- PRELOAD AND SETUP ------------------------------------>
+function preload() {
+    // Load images and sounds
+    bg = loadImage("assets/bg.png");
+    hen = loadImage("assets/hen.png");
+    eggImg = loadImage("assets/egg.png");
+    hatImg = loadImage("assets/hat.png");
+    warrior = loadImage("assets/warrior.png");
+    gamebg = loadImage("assets/gamebg.jpg");
+
+    catchMusic = loadSound("assets/catch.mp3");
+}
+
+function setup() {
+    createCanvas(1000, 1000); // Set up the canvas
+    pixelDensity(1);
+    initDefaultMode(); // Initialize the default mode
+}
+
+// <-------------------------------------- MODES ------------------------------------------->
+function initDefaultMode() {
+    // Initialize default mode settings
+    mode = "default";
+    clearSetup(); // Clear previous setup if any
+
+    // Create sliders for color adjustment
+    redSlider = createSlider(0, 256, 80);
+    redSlider.position(15, 4.4 * h);
+
+    greenSlider = createSlider(0, 256, 80);
+    greenSlider.position(w + 25, 4.4 * h);
+
+    blueSlider = createSlider(0, 256, 80);
+    blueSlider.position(2 * w + 35, 4.4 * h);
+
+    // Create sliders for HSV and CMYK adjustments
+    hsvSlider = createSlider(0, 256, 0);
+    hsvSlider.position(w + 25, 7 * h);
+
+    cmykSlider = createSlider(0, 256, 0);
+    cmykSlider.position(2 * w + 35, 7 * h);
+
+    // Create buttons for different functionalities
+    screenshotButton = createButton('Take Screenshot');
+    screenshotButton.position(width - 200, 300);
+    screenshotButton.mousePressed(runAgain);
+
+    gameButton = createButton("Switch to Game Mode");
+    gameButton.position(width - 200, 350);
+    gameButton.mousePressed(startGame);
+
+    funModeButton = createButton("Switch to Fun Mode");
+    funModeButton.position(width - 200, 400);
+    funModeButton.mousePressed(funMode);
+
+    // Create video capture and initialize face detection
+    capture = createCapture(VIDEO);
+    capture.size(w, h);
+    capture.hide();
+
+    scaleFactor = 1.2;
+    detector = new objectdetect.detector(w, h, scaleFactor, classifier);
+}
+
+function initGameMode() {
+    mode = "gameMode";
+    clearSetup(); // Clear previous setup if any
+
+    createCanvas(800, 600);
+    pixelDensity(1);
+    capture = createCapture(VIDEO);
+    capture.size(w, h);
+    capture.hide();
+
+    scaleFD = 1.2;
+    detector = new objectdetect.detector(w, h, scaleFactor, classifier);
+    faceImgForGame = createImage(w, h);
+}
+
+function initFunMode()
+{
+    mode = "funMode";
+    clearSetup(); // Clear previous setup if any
+
+    createCanvas(1200, 1200);
+
+    video = createCapture(VIDEO);
+    video.size(width, height);
+    video.hide()
+    
+   
+   cat = createVideo("assets/cat.mp4");
+   
+    playButton = createButton("video");
+    playButton.position(width - 300, 0);
+    playButton.mousePressed(toggleVid)
+
+    funButton = createButton("start game");
+    funButton.position(width - 200, 0);
+    funButton.mousePressed(toggleGameState)
+
+    backButton = createButton("back");
+    backButton.position(width - 100, 0);
+    backButton.mousePressed(goBack)
+
+    faceOptions = {
+    withLandmarks: true,
+    withExpressions: true,
+    withDescriptors: true,
+    minConfidence: 0.5
+    };
+    // ml5 poseNet 
+    poseNet = ml5.poseNet(video, modelReady);
+    poseNet.on('pose', gotPoses);
+    background(0);
+}
+
+// <-------------------- CLEAR AND REPLACE SETUP -------------------------------------->
+function clearSetup() {
+    // Clear all UI elements from the canvas
+    if (redSlider) redSlider.remove();
+    if (greenSlider) greenSlider.remove();
+    if (blueSlider) blueSlider.remove();
+    if (hsvSlider) hsvSlider.remove();
+    if (cmykSlider) cmykSlider.remove();
+    if (screenshotButton) screenshotButton.remove();
+    if (gameButton) gameButton.remove();
+    if (funModeButton) funModeButton.remove();
+}
+
+function startGame() {
+    mode = "gameMode"; // Change the mode to game mode
+    initGameMode(); // Initialize the game mode
+}
+
+function funMode()
+{
+    mode = "funMode"; // Change the mode to expression
+    initFunMode()
+}
+
+// <----------------------------- SCREENSHOT AND PLAYBACK -------------------------------->
+function takeScreenshot() {
+    capturedImage = capture.get();
+    capturedImage.resize(w, h);
+    return capturedImage;
+}
+
+function runAgain() {
+    takeScreenshot();
+    capture = createCapture(VIDEO);
+    capture.hide();
+}
+
+// <----------------------------------- MAIN DRAW ------------------------------------->
+function draw() {
+    if(mode =="default")
+    {
+        drawFilterMode();
+    }
+    if (mode == "gameMode") 
+    {
+        drawGameWorld();
+    } 
+    if(mode == "funMode")
+    {
+        drawFunWorld();
+
+    }
+}
+
+// <---------------------------------- FILTERMODE ----------------------------->
+function drawFilterMode() {
+    background(125);
+
+    // Display the video capture
+    image(capture, width - 300, 100, 240, 180);
+    text("Greyscale with brightness", w + 20, h - 30);
+    text("red channel", 10, 2 * h + 10)
+    text("green channel", w + 20, 2 * h + 10)
+    text("blue channel", 2 * w + 30, 2 * h + 10)
+    text("red channel Threshold: "+ redSlider.value(), 10, 3.3 * h + 10)
+    text("green channel Threshold: "+ greenSlider.value() , w + 20, 3.3 * h + 10)
+    text("blue channel Threshold: "+ blueSlider.value(), 2 * w + 30, 3.3 * h + 10)
+    text("Webcam Image", 10, 4.6 * h + 10)
+    text("RGB to HSV Threshold: "+ hsvSlider.value(), w + 20, 5.9 * h + 10)
+    text("RGB to HSV", w + 20, 4.6 * h + 10)
+    text("RGB to CMYK Threshold: " + cmykSlider.value(), 2 * w + 30, 5.9 * h + 10)
+    text("RGB to CMYK", 2 * w + 30, 4.6 * h + 10)
+    text("Face Detection", 10, 5.9 * h + 10)
+    text("Select a number to apply an effect: \n1.Greyscale\n2.CMYK\n3.HSV\n4.pixelated\n5.Gaussianblur",10, 7.2*h)
+    // Display the captured image if available
+    if (capturedImage) {
+        image(capturedImage, 10, h-20, w, h);
+        image(greyscale(capturedImage), w + 20, h-20, w, h);
+        
+        // rgb
+        image(rgbChannels(capturedImage)[0], 10, 2 * h + 20, w, h);
+        image(rgbChannels(capturedImage)[1], w + 20, 2 * h + 20, w, h);
+        image(rgbChannels(capturedImage)[2], 2 * w + 30, 2 * h + 20, w, h);
+
+        // rgb with threshold
+        image(rgbWithThreshold(capturedImage)[0], 10, 3.3 * h + 20, w, h);
+        image(rgbWithThreshold(capturedImage)[1], w + 20, 3.3 * h + 20, w, h);
+        image(rgbWithThreshold(capturedImage)[2], 2 * w + 30, 3.3 * h + 20, w, h);
+
+        // hsb and cymk
+        image(capturedImage, 10, 4.6 * h + 20, w, h);
+
+        var threshold = hsvSlider.value();
+        var [hsvImgWithThreshold, hsvImgWithoutThreshold] = hsvConversion(capturedImage, threshold);
+        image(hsvImgWithThreshold, w + 20, 5.9 * h + 20, w, h);     // Display the HSB image with threshold
+        image(hsvImgWithoutThreshold, w + 20, 4.6 * h + 20, w, h);   // Display the HSB image without threshold
+
+        var threshold2 = cmykSlider.value();
+        var [cmykImgWithThreshold, cmykImgWithoutThreshold] = cmykConversion(capturedImage, threshold2);
+        image(cmykImgWithThreshold, 2 * w + 30, 5.9 * h + 20, w, h);  // Display the CMYK image with threshold
+        image(cmykImgWithoutThreshold, 2 * w + 30, 4.6 * h + 20, w, h);  // Display the CMYK image without threshold
+       
+        // facedetection
+        img = faceDetection(capturedImage);
+        image(capturedImage, 10, 5.9 * h + 20, w, h, 0, 0, windowWidth, windowHeight);
+      
+        translate(10, 5.9 * h + 20);
+        push()
+        if (effects) {
+            image(effects, face[0], face[1], face[2], face[3], 0, 0, windowWidth, windowHeight);
+        }
+        pop()
+    }
+}
+
+function keyPressed() {
+    switch (keyCode) {
+        case 49: // 1
+            effects = greyscale(img);
+            break;
+        case 50: // 2
+            effects = cmykConversion(img, cmykSlider.value())[1];
+            break;
+        case 51: // 3
+            effects = hsvConversion(img, hsvSlider.value())[1];
+            break;
+        case 52: // 4
+            effects = pixelated(img);
+            break;
+        case 53: // 5
+            effects = gaussianBlur(img,20);
+            break;   
+        default:
+            effects = null;
+            break;
+    }
+
+}
+
+/*-----------------------------------GRAPHICS PROGRAMMING - FINAL-----------------------------------------------
+
+Project Overview:
+For this project, I'll be developing an image processing application that relies on the webcam for a range of exciting functionalities. I'll be experimenting with tasks such as image segmentation and color space conversions. Additionally, I'll implement face detection features with filters like face blur or pixelation. On top of that, I'll be adding two more extensions: one is a game, and the other is a fun mode. It's all about exploring image processing while making the most out of webcam technology!
+
+Findings on Image Segmentation using Color Channels:
+During the image segmentation process, I explored the utilization of various color spaces such as HSV (Hue, Saturation, Value) and CMYK (Cyan, Magenta, Yellow, Black). These color spaces were chosen for their effectiveness in segmenting images based on different color characteristics.
+
+Challenges Encountered and Solutions Implemented:
+One major challenge I encountered was managing the segmentation functions efficiently. Initially, I had separate functions for each color segment, with and without thresholding. However, consolidating these functions into a single one posed difficulties, particularly in returning and calling them within the drawing process. After conducting thorough research, I addressed this issue by returning the segmentation results as an array and then calling them using indices in the drawing function. This approach streamlined the code and improved its maintainability.
+
+Progress Toward Project Completion:
+In progressing towards completing the project objectives, I encountered significant challenges, particularly with implementing the extension feature. The focus was on integrating a fun mode allowing users to draw using hand movements, reminiscent of childhood games. However, a major obstacle emerged from the constant refreshing of the background in each frame, disrupting the seamless drawing experience.
+
+The main issue stemmed from the need to refresh the background to prevent other elements like draw boxes, landmarks, and pose from being overwritten. However, I also needed the drawing from the right hand to be overwritten to appear as lines. Despite multiple attempts, I couldn't find a satisfactory solution to reconcile these conflicting requirements.
+
+Uniqueness of the Extension Idea:
+First Extension, I utilized the objectdetect.js library to detect facial features, specifically the head. Drawing inspiration from my childhood memories, I recreated the classic game "Hen Catch Eggs" with a modern twist. Using facial detection technology for movement controls adds a novel dimension to the gameplay. Players control a hen to catch falling eggs while avoiding missing three. It's a simple yet engaging game that seamlessly blends nostalgia with technology for a delightful gaming experience.
+ 
+Second extension: With the hand-drawing challenge still persisting, I opted for a different direction and created a fighting game experience. In this iteration, players engage in dynamic battles against formidable opponent, utilizing a range of combat moves to secure victory. Every 10 seconds, the opponent throws objects, making the game harder and needing quick reactions. Additionally, I included entertaining videos for players to mimic, adding an element of amusement and engagement to the gameplay.
+
+
+References:
+
+Images - https://www.canva.com/
+Video - https://www.youtube.com/watch?v=wu4NYMmk8pk
+PoseNet - https://youtu.be/OIo-DIOkNVg?feature=shared
+Music - https://pixabay.com/
+
+*/
